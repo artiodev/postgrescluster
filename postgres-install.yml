@@ -1,0 +1,143 @@
+---
+- hosts: all
+  gather_facts: true
+  tasks:
+    - debug: var=inventory_hostname
+    - debug: var=ansible_ssh_host
+
+- hosts: master,standby
+  roles:
+    - setup_base
+
+- hosts: master,standby
+  roles:
+    - postgres-install-commons
+
+- hosts: master,standby
+  become: yes
+  become_user: postgres
+  tasks:
+    - name: get pub key master
+      command: /bin/cat /var/lib/pgsql/.ssh/id_rsa.pub
+      register: pubkey_master
+      when: inventory_hostname == "master"
+    
+    - name: get pub key standby
+      command: /bin/cat /var/lib/pgsql/.ssh/id_rsa.pub
+      register: pubkey_standby
+      when: inventory_hostname == "standby"
+
+    - set_fact:
+        pubkey_master: "{{pubkey_master.stdout_lines[0]}}"
+      when: inventory_hostname == "master"
+    
+    - set_fact:
+        pubkey_standby: "{{pubkey_standby.stdout_lines[0]}}"
+      when: inventory_hostname == "standby"
+
+- hosts: standby
+  become: yes
+  become_user: postgres
+  tasks:
+    - name: Set authorized key to standby
+      authorized_key:
+        user: postgres
+        state: present
+        key: "{{ hostvars['master']['pubkey_master'] }}"
+        path: /var/lib/pgsql/.ssh/authorized_keys
+
+- hosts: master
+  become: yes
+  become_user: postgres
+  tasks:
+    - name: Set authorized key to master
+      authorized_key:
+        user: postgres
+        state: present
+        key: "{{ hostvars['standby']['pubkey_standby'] }}"
+        path: /var/lib/pgsql/.ssh/authorized_keys
+
+- hosts: barman
+  roles:
+    - barman
+
+- hosts: barman
+  become: yes
+  become_user: barman
+  tasks:
+    - name: get pub key standby
+      command: /bin/cat /var/lib/barman/.ssh/id_rsa.pub
+      register: pubkey_barman
+
+    - set_fact:
+        pubkey_barman: "{{pubkey_barman.stdout_lines[0]}}"
+
+- hosts: master,standby
+  become: yes
+  become_user: postgres
+  tasks:
+    - name: Set ssh barman public key on Master and Slave server
+      authorized_key:
+        user: "postgres"
+        state: present
+        key: "{{ hostvars['barman']['pubkey_barman'] }}"
+        path: /var/lib/pgsql/.ssh/authorized_keys
+
+- hosts: barman
+  become: yes
+  become_user: barman
+  tasks:
+    - name: Check Barman-Master connection status
+      shell: barman check master
+      register: barman_status
+      ignore_errors: yes
+
+    - name: Set public key master and slave on barman host
+      authorized_key:
+        user: "barman"
+        state: present
+        key: "{{ item }}"
+        path: /var/lib/barman/.ssh/authorized_keys
+      with_items:
+        - "{{ hostvars['master']['pubkey_master'] }}"
+        - "{{ hostvars['standby']['pubkey_standby'] }}"
+  
+
+    - name: Debug connections status
+      debug:
+        msg: "{{ barman_status.stdout }}"
+
+- hosts: master
+  roles:
+    - postgres-install-master
+
+- hosts: master,standby
+  roles:
+    - repmgr-install-commons
+
+- hosts: master
+  roles:
+    - repmgr-master
+
+- hosts: barman
+  become: yes
+  become_user: barman
+  tasks:
+    - name: Check master connection
+      shell: barman check {{hostvars['master']['hostname']}} | grep FAILED | wc -l
+      register: barman_check
+    - name: Debug barman_check
+      debug:
+        msg: "{{barman_check}}"
+    - name: Running a backup from master
+      shell: barman backup {{hostvars['master']['hostname']}}
+      when: barman_check.stdout == "1" or barman_check.stdout == "0"
+
+- hosts: standby
+  roles: 
+    - repmgr-standby
+
+- hosts: master,standby
+  become: true
+  roles:
+    - keepalived

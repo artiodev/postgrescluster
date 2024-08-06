@@ -1,0 +1,148 @@
+---
+- name: Networking | Disable selinux
+  become: yes
+  selinux:
+    state: disabled
+
+- name: Networking | Disable Firewalld
+  become: yes
+  service:
+       name: firewalld
+       state: stopped
+       enabled: False
+
+- name: Installing Common Packages
+  become: yes
+  yum:
+    name:
+      - wget
+      - rsync
+      - mlocate
+      - epel-release
+      - ntp
+      - awscli
+    state: latest
+
+- name: Installing python-pip 
+  become: yes
+  yum:
+    name:  python-pip
+    state: latest
+
+- name: Check 2ndquadrant repo
+  shell: rpm -q barman-cli
+  register: rpm_check
+  ignore_errors: yes
+
+- name: Installing Barman-cli on Standby
+  become: yes
+  shell: curl https://dl.2ndquadrant.com/default/release/get/11/rpm | sudo bash
+  when: rpm_check.rc > 0
+
+- name: Installing barman-cli on all host
+  become: yes
+  yum:
+    name:
+      - barman-cli-2.10-2.el7
+    state: present
+
+- name: Configure hostname on dedicated barman host
+  become: yes
+  block:
+    - name: Check hostname
+      shell: /bin/cat /etc/hostname
+      register: host_name
+
+    - name: Change all hostname 
+      block: 
+      - name: Fix hostname
+        shell: hostname "{{ hostvars[inventory_hostname].hostname}}"
+
+      - name: Fix hostname
+        shell: echo "{{ hostvars[inventory_hostname].hostname}}" > /etc/hostname
+        
+      when: host_name.stdout_lines[0] != hostvars[inventory_hostname].hostname
+      
+    - name: Fix file hosts
+      template:
+        src: hosts.j2 
+        dest: "/etc/hosts"
+  when:  dedicated_barman is defined 
+
+- name: Check 2ndquadrant repo
+  shell: rpm -q barman-cli
+  register: rpm_check
+  ignore_errors: yes
+
+- name: Enable postgres repo 
+  become: yes
+  shell: curl https://dl.2ndquadrant.com/default/release/get/11/rpm | sudo bash
+  when: rpm_check.rc > 0
+
+- name: Installing Barman
+  become: yes
+  yum:
+    name:
+      - barman-2.10-2.el7
+    state: present
+
+- name: Check if SSH key is already existing
+  become: yes
+  become_user: barman
+  stat:
+    path: "{{barman_home}}/.ssh/id_rsa"
+  register: ssh_exists
+
+- name: Generate ssh key 
+  become: yes
+  become_user: barman
+  block:
+    - name: Generating SSH key 
+      shell: ssh-keygen -b 2048 -t rsa -f {{barman_home}}/.ssh/id_rsa -q -N ""
+    
+    - name: generate public ssh key
+      shell: ssh-keygen -b 2048 -t rsa -y -f {{barman_home}}/.ssh/id_rsa -q -N "" > {{barman_home}}/.ssh/id_rsa.pub 
+
+    - name: Create authorized file 
+      file:
+        path: "{{barman_home}}/.ssh/authorized_keys"
+        state: touch
+        owner: barman
+        group: barman
+        mode: '0600'
+    
+    - name: ssh key scan
+      shell: ssh-keyscan -H {{hostvars['master']['hostname']}} >> ~/.ssh/known_hosts
+      
+  when: not ssh_exists.stat.exists
+
+- name: Set barman conf 
+  become: yes
+  template: 
+    src: barman.conf.j2 
+    dest: /etc/barman.conf 
+    mode: "0755"
+
+- name: Add crontab daily backup
+  become: yes
+  become_user: barman
+  cron:
+    name: Barman backup
+    weekday: "*"
+    minute: "0"
+    hour: "4"
+    user: barman
+    job: "/usr/bin/barman backup master"
+    state: present
+
+- name: Add crontab barman cron
+  become: yes
+  become_user: barman
+  cron:
+    name: Barman backup
+    weekday: "*"
+    minute: "1"
+    hour: "*"
+    user: barman
+    state: present
+    job: "/usr/bin/barman cron"

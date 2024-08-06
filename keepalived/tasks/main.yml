@@ -1,0 +1,36 @@
+---
+
+- name: install keepalived package
+  yum: name=keepalived state=present
+
+- name: Create script directory
+  file:
+    path: /etc/keepalived/script
+    state: directory
+
+- name: copy keepalived script vip
+  template: src=assign-vip.sh.j2 dest=/etc/keepalived/script/assign-vip.sh mode=0755
+  when: cloud_enviroment is defined
+
+- name: copy keepalived script notify
+  copy:
+      src: notify.sh
+      dest: /etc/keepalived/script/notify.sh
+      owner: root
+      group: root
+      mode: '0755'
+
+- name: copy keepalived script check
+  copy:
+      src:  repmgr-check-{{inventory_hostname}}.sh
+      dest: /usr/libexec/keepalived/repmgr-check-{{inventory_hostname}}.sh
+      owner: root
+      group: root
+      mode: '0755'
+
+- name: copy keepalived config
+  template: src=keepalived.conf.j2 dest=/etc/keepalived/keepalived.conf mode=0644
+
+
+- name: enabling keepalived service
+  service: name=keepalived state=restarted enabled=yes

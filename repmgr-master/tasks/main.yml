@@ -1,0 +1,70 @@
+---
+- name: Check if repmgr user exists
+  become: yes
+  become_user: postgres
+  shell: psql postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='repmgr'"
+  register: repmgr_check
+
+- name: Configure Repmgr on Master node
+  block:
+  - name: Create repmgr user
+    become: yes
+    become_user: postgres
+    shell: createuser --superuser repmgr
+
+  - name: Create repmgr db
+    become: yes
+    become_user: postgres
+    shell: createdb --owner=repmgr repmgr
+
+  - name: Change repmgr default serch path
+    become: yes
+    become_user: postgres
+    shell: psql -c "ALTER USER repmgr SET search_path TO repmgr, public;"
+  when: repmgr_check.stdout != "1"
+
+- name: Add repmgr to postgres.conf
+  become: yes
+  become_user: postgres
+  lineinfile:
+    dest: "{{PGDATA}}/postgresql.conf"
+    regexp: '^#\s*shared_preload_libraries.*$'
+    line: "shared_preload_libraries = 'repmgr, pg_stat_statements'"
+
+- name: Update repmgr conf 
+  become: yes
+  template:
+    src: repmgr.conf.j2 
+    dest: "/etc/repmgr/11/repmgr.conf"
+    mode: "0644"
+
+- name: Check if primary node is already register to the cluster
+  become: yes
+  become_user: postgres
+  shell: /usr/pgsql-11/bin/repmgr -f /etc/repmgr/11/repmgr.conf cluster show | grep primary
+  register: cluster_status
+  ignore_errors: yes
+
+- name: Register Master Node
+  become: yes
+  become_user: postgres
+  shell: /usr/pgsql-11/bin/repmgr -f /etc/repmgr/11/repmgr.conf primary register
+  when: cluster_status.rc > 0
+
+- name: Restart service postgresql-11
+  become: yes 
+  become_user: postgres
+  command: sudo /bin/systemctl restart postgresql-11.service
+
+- name: Enabled repmgr service
+  become: yes
+  run_once: true
+  command: /bin/systemctl enable repmgr11.service
+
+- name: Start repmgr service
+  become: yes
+  command: /bin/systemctl start repmgr11.service
+
+- name: Restart repmgr service
+  become: yes
+  command: /bin/systemctl restart repmgr11.service

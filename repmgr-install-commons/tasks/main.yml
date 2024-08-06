@@ -1,0 +1,16 @@
+---
+- name: Check 2ndquadrant repo
+  shell: rpm -q repmgr11
+  register: rpm_check
+  ignore_errors: yes
+
+- name: Download 2Quadrant Repmgr Repo  
+  become: yes
+  shell: curl https://dl.2ndquadrant.com/default/release/get/11/rpm | sudo bash
+  when: rpm_check.rc > 0
+
+- name: Install Repmgr  
+  become: yes
+  yum:
+    name: repmgr11-5.0.0-1.el7
+    state: present

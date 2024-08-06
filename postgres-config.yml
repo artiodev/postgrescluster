@@ -1,0 +1,54 @@
+---
+## Postgres site variable.
+## Read the doc before running it.
+postgres:
+  hosts:
+    master: 
+      ansible_ssh_host:  x.x.x.x
+      hostname: master-hostname
+      interface_id: eni-*
+      priority: 100
+      keepalived_unicast_ip: x.x.x.x
+      
+    standby: 
+      ansible_ssh_host: x.x.x.x
+      hostname: standby-hostname
+      interface_id: eni-*
+      priority: 50
+      keepalived_unicast_ip: x.x.x.x
+      
+    barman:  
+      ansible_ssh_host: x.x.x.x
+      hostname: barman-hostname
+
+
+all:
+  vars:
+    ansible_ssh_private_key_file: ~/.ssh/postgres.pem
+    ansible_user: centos
+    ansible_ssh_extra_args: '-o StrictHostKeyChecking=no'
+    cloud_enviroment: true #Optional paramenter. Defined on aws site
+
+    # Keepalived
+    keepalived_virtual_ip: x.x.x.x #keepalived VIP
+    subnet_vpc: 20 #keepalived Subnet 
+    keepalived_interface: eth0
+
+    # Postgres Variables
+    max_connections: 200 #Number of concurrent connections
+    listen_addresses: '*'
+    port: 5432 #Default postgres port
+    shared_buffers: 4096MB #Define as 1/4 total memory
+    work_mem: 50MB
+    maintenance_work_mem: 256MB
+    max_wal_senders: 10
+    wal_keep_segments: 64
+    PGDATA: /var/lib/pgsql/11/data
+
+    # Barman Variables 
+    barman_home : "/var/lib/barman"
+    retention_policy_mode: auto
+    retention_policy: RECOVERY WINDOW OF 7 days
+    wal_retention_policy: main
+    backup_method: rsync
+    dedicated_barman: true # Optinal parameter. Defined for barman dedicated server

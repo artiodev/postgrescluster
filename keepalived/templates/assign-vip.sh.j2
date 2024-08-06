@@ -1,0 +1,5 @@
+#!/bin/bash
+EIP={{ keepalived_virtual_ip }}
+ENI_ID={{ hostvars[inventory_hostname]['interface_id'] }}
+
+aws ec2 assign-private-ip-addresses --allow-reassignment --network-interface-id $ENI_ID --private-ip-addresses $EIP --region eu-central-1

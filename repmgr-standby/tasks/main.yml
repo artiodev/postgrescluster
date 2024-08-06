@@ -1,0 +1,77 @@
+---
+- name: Check if postgres has already clone from master
+  become: yes
+  stat:
+    path: "{{ PGDATA }}/pg_hba.conf"
+  register: postgres_check
+  ignore_errors: yes
+
+- name: install pip argparse
+  become: yes
+  pip: 
+    name: argparse
+    state: present
+
+- name: Copy repmgr conf 
+  become: yes
+  template:
+    src: repmgr.conf.j2 
+    dest: "/etc/repmgr/11/repmgr.conf"
+    mode: "0644"
+
+- name: Running Clone Check Standby from Barman DRY RUN
+  become: yes
+  become_user: postgres
+  shell: /usr/pgsql-11/bin/repmgr -f /etc/repmgr/11/repmgr.conf -h {{ hostvars['master']['ansible_ssh_host'] }} -U repmgr -d repmgr standby clone --dry-run
+  register: repmgr_clone_status
+  when: not postgres_check.stat.exists
+
+- name: Running Clone Standby from Barman
+  become: yes
+  become_user: postgres
+  shell: /usr/pgsql-11/bin/repmgr -f /etc/repmgr/11/repmgr.conf -h {{ hostvars['master']['ansible_ssh_host'] }} -U repmgr -d repmgr standby clone
+  when: not postgres_check.stat.exists
+
+- name: Start service postgresql-11
+  become: yes 
+  become_user: postgres
+  command: sudo /bin/systemctl start postgresql-11.service
+
+- name: Show Cluster Status
+  become: yes
+  become_user: postgres
+  shell: /usr/pgsql-11/bin/repmgr -f /etc/repmgr/11/repmgr.conf cluster show
+  register: cluster_status
+
+- name: Debug cluster status
+  debug:
+    msg: Cluster Status {{ cluster_status.stdout }}
+
+- name: Check if standby node is already register to the cluster
+  become: yes
+  become_user: postgres
+  shell: /usr/pgsql-11/bin/repmgr -f /etc/repmgr/11/repmgr.conf cluster show | grep standby
+  register: repmgr_check
+  ignore_errors: yes
+
+- name: Register Standby Node
+  become: yes
+  become_user: postgres
+  shell: /usr/pgsql-11/bin/repmgr -f /etc/repmgr/11/repmgr.conf standby register
+  when: repmgr_check.rc > 0
+
+- name: Restart service postgresql-11
+  become: yes 
+  become_user: postgres
+  command: sudo /bin/systemctl restart postgresql-11.service
+
+- name: Enabled repmgr service
+  become: yes
+  service:
+    name: repmgr11
+    state: started
+    enabled: yes
+
+- name: Restart repmgr service
+  become: yes
+  command: /bin/systemctl restart repmgr11.service

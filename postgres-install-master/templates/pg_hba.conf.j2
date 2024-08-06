@@ -1,0 +1,30 @@
+
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+
+local   all             postgres                                trust        
+# "local" is for Unix domain socket connections only
+local   replication     repmgr                              	trust
+local   repmgr          repmgr                              	trust
+local   all             all                                     peer
+# IPv4 local connections:
+host    all             all             127.0.0.1/32            ident
+# IPv6 local connections:
+host    all             all             ::1/128                 ident
+# Allow replication connections from localhost, by a user with the
+# replication privilege.
+local   replication     all                                     peer
+host 	repmgr		    repmgr		    {{ hostvars['standby']['ansible_ssh_host'] }}/32		trust
+host    replication     repmgr          {{ hostvars['standby']['ansible_ssh_host'] }}/32     trust
+host    replication     repmgr          {{ hostvars['master']['ansible_ssh_host'] }}/32     trust
+host    repmgr          repmgr          {{ hostvars['master']['ansible_ssh_host'] }}/32     trust
+host    replication     repmgr      	127.0.0.1/32            trust
+host    repmgr          repmgr      	127.0.0.1/32            trust
+
+
+host    replication     all             127.0.0.1/32            ident
+host    replication     all             ::1/128                 ident
+# Barman
+host    all             all             {{ hostvars['barman']['ansible_ssh_host'] }}/32      trust
+# Accept from anywhere
+host 	all 	    	all 		    0.0.0.0/0		        md5
+

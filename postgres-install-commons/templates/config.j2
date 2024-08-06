@@ -1,0 +1,10 @@
+Host {{ hostvars['barman']['ansible_ssh_host'] }}
+    StrictHostKeyChecking no
+    UserKnownHostsFile=/dev/null
+{% if inventory_hostname == 'master' %}
+Host {{ hostvars['standby']['ansible_ssh_host'] }}
+{% else %}
+Host {{ hostvars['master']['ansible_ssh_host'] }}
+{% endif %}
+    StrictHostKeyChecking no
+    UserKnownHostsFile=/dev/nul

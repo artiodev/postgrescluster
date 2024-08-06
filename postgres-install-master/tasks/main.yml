@@ -1,0 +1,48 @@
+---
+
+- name: Check if postgres has been already initialized
+  become: yes
+  stat:
+    path: "{{ PGDATA }}/pg_hba.conf"
+  register: pg_check
+
+- name: Initialized Database on Primary Node
+  become: yes
+  shell: /usr/pgsql-11/bin/postgresql-11-setup initdb
+  when: not pg_check.stat.exists
+
+- name: Setup Auth File
+  become: yes
+  become_user: postgres
+  template: 
+    src: pg_hba.conf.j2 
+    dest: "{{ PGDATA }}/pg_hba.conf"
+    mode: "0600"
+    owner: postgres
+    group: postgres
+
+- name: Setup Postgres Config File
+  become: yes 
+  become_user: postgres
+  template:
+    src: postgres.conf.j2 
+    dest: "{{ PGDATA }}/postgresql.conf"
+    mode: "0600"
+    owner: postgres
+    group: postgres
+
+- name: Enable service postgresql-11
+  become: yes 
+  become_user: postgres
+  run_once: true
+  command: sudo /bin/systemctl enable postgresql-11.service
+
+- name: Start service postgresql-11
+  become: yes 
+  become_user: postgres
+  command: sudo /bin/systemctl start postgresql-11.service
+
+- name: Restart service postgresql-11
+  become: yes 
+  become_user: postgres
+  command: sudo /bin/systemctl restart postgresql-11.service

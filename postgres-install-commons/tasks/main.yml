@@ -1,0 +1,61 @@
+---
+- name: Installing Postgres 11.6 -- Add rpm package
+  become: yes
+  shell: rpm -Uvh https://yum.postgresql.org/11/redhat/rhel-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+  ignore_errors: yes
+
+- name: Installing Postgres 11.6 -- Install packages
+  become: yes
+  yum:
+    name:
+      - postgresql11-11.6-2PGDG.rhel7
+      - postgresql11-server-11.6-2PGDG.rhel7 
+      - postgresql11-contrib-11.6-2PGDG.rhel7
+    state: present
+
+- name: Make sure we have a 'postgres' user
+  user:
+    name: postgres
+    state: present
+
+- name: Allow 'postgres'
+  become: yes
+  lineinfile:
+    dest: /etc/sudoers
+    state: present
+    regexp: '^postgres'
+    line: 'postgres ALL=(ALL) NOPASSWD: /bin/rsync, /bin/systemctl  enabled postgresql-11.service, /bin/systemctl  restart postgresql-11.service,  /bin/systemctl  start postgresql-11.service,  /bin/systemctl  stop postgresql-11.service,  /bin/systemctl  reload postgresql-11.service, /bin/systemctl  status postgresql-11.service'
+    validate: 'visudo -cf %s'
+
+
+- name: Check if SSH key is already existing
+  become: yes
+  become_user: postgres
+  stat:
+    path: /var/lib/pgsql/.ssh/id_rsa
+  register: ssh_exists
+
+- name: Generate ssh key
+  become: yes
+  become_user: postgres
+  block:
+    - name: Generating SSH key 
+      shell: ssh-keygen -b 2048 -t rsa -f /var/lib/pgsql/.ssh/id_rsa -q -N ""
+    
+    - name: generate public ssh key
+      shell: ssh-keygen -b 2048 -t rsa -y -f /var/lib/pgsql/.ssh/id_rsa -q -N "" > /var/lib/pgsql/.ssh/id_rsa.pub  
+
+    - name: Create authorized file
+      file:
+        path: /var/lib/pgsql/.ssh/authorized_keys
+        state: touch
+        owner: postgres
+        group: postgres
+        mode: '0600'
+    
+    - name: Set ssh config file 
+      template:
+        src: config.j2 
+        dest: "/var/lib/pgsql/.ssh/config"
+        mode: "0600"
+  when: not ssh_exists.stat.exists
